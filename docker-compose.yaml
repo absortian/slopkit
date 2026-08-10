@@ -1,0 +1,45 @@
+services:
+  slopkit:
+    build:
+      context: .
+      target: web
+    image: slopkit:local
+    container_name: slopkit
+    restart: unless-stopped
+    ports:
+      # HOST_PORT is the port exposed on the Docker host. We deliberately use a
+      # non-standard port (8080 by default) — apply your own reverse-proxy /
+      # tunnel / port-forwarding layer to expose it the way you want.
+      # Example: change to 9000 in .env with `HOST_PORT=9000`.
+      - "${HOST_PORT:-8080}:8080"
+    # Optional: bind mount for live edits without rebuilding the image.
+    # Uncomment the `volumes` block below if you want hot-reload of HTML/JS
+    # while developing. The bind mount overlays the COPY in the Dockerfile.
+    #
+    # volumes:
+    #   - ./:/srv:ro
+    environment:
+      # PYTHONUNBUFFERED makes log output appear immediately in `docker logs`.
+      - PYTHONUNBUFFERED=1
+
+  # Captive-port DNS — answers ONLY manuals.playstation.net -> DNS_IP.
+  # Listens on UDP/53 directly on the host's network so LAN clients (PS5)
+  # can hit it without explicit port forwarding.
+  #
+  # NOTE: requires Docker on Linux (or Docker Desktop with the host-networking
+  # flag enabled on macOS / Windows). Port 53/udp is a privileged low port;
+  # running this in `network_mode: host` bypasses the docker-proxy bridge.
+  dns:
+    build:
+      context: .
+      target: dns
+    image: slopkit-dns:local
+    container_name: slopkit-dns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - DNS_IP=${DNS_IP:-127.0.0.1}
+    # Bind UDP/53 on the host directly so PS5 LAN queries reach this container.
+    # If you want to run the DNS in bridge mode instead, swap network_mode for:
+    #   ports: ["53:53/udp"]
+    # and update your router / firewall accordingly.
