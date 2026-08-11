@@ -1,10 +1,19 @@
-// dns/main.go — minimal authoritative DNS server answering a single A record.
+// dns/main.go — minimal authoritative DNS server with three buckets:
 //
-// Listens on UDP/53 and answers every A query for `manuals.playstation.net`
-// with the IPv4 address supplied via the DNS_IP env var. All other queries
-// get a NXDOMAIN reply. No recursion, no caching, no upstream.
+//  1. PRIMARY targets (DNS_TARGETS, default: manuals.playstation.net)
+//     Answer A queries with the IPv4 address supplied via DNS_IP.
+//     Used to redirect the PS5 captive-port probe to the local web server.
 //
-// Sized to be embedded on scratch in a multi-stage Docker build. ~1.8 MB binary.
+//  2. NULL targets    (DNS_NULL_TARGETS, default: smetrics.aem.playstation.com
+//     and telemetry-console.api.playstation.com)
+//     Answer A queries with 0.0.0.0. The PS5 will silently drop the
+//     connection because 0.0.0.0 is not a routable address. We do NOT use
+//     NXDOMAIN here because some clients fall back to a captive portal on
+//     NXDOMAIN, which would re-trigger the very loop we are trying to break.
+//
+//  3. Anything else — answer NXDOMAIN. No recursion, no caching, no upstream.
+//
+// Sized to be embedded on scratch in a multi-stage Docker build. ~2 MB binary.
 package main
 
 import (
@@ -18,8 +27,20 @@ import (
 
 const (
 	defaultListenAddr = ":53"
-	targetName        = "manuals.playstation.net"
 	maxUDPpacket      = 512
+)
+
+// Defaults are baked in so an out-of-the-box deployment works without any
+// env vars. Operators can override or extend at runtime via DNS_TARGETS and
+// DNS_NULL_TARGETS (comma-separated, lower-cased, fully qualified, no trailing
+// dot). All comparisons below use strings.EqualFold so user-supplied casing
+// doesn't matter.
+var (
+	defaultPrimaryTargets = []string{"manuals.playstation.net"}
+	defaultNullTargets    = []string{
+		"smetrics.aem.playstation.com",
+		"telemetry-console.api.playstation.com",
+	}
 )
 
 // DNS header flags we care about.
@@ -32,15 +53,20 @@ const (
 	qclassIN   = 1
 )
 
+// result is one of three possible outcomes for a parsed query. Used both for
+// logging and for picking the response payload.
+type result int
+
+const (
+	resNXDOMAIN result = iota
+	resAnswer          // matched a primary target — answer with DNS_IP
+	resNull            // matched a null target — answer with 0.0.0.0
+)
+
 func main() {
-	ipStr := os.Getenv("DNS_IP")
-	if ipStr == "" {
-		ipStr = "127.0.0.1"
-	}
-	ip := net.ParseIP(ipStr).To4()
-	if ip == nil {
-		log.Fatalf("dns: DNS_IP=%q is not a valid IPv4 address", ipStr)
-	}
+	dnsIP := parseIP(os.Getenv("DNS_IP"))
+	primaryTargets := parseTargets(os.Getenv("DNS_TARGETS"), defaultPrimaryTargets)
+	nullTargets := parseTargets(os.Getenv("DNS_NULL_TARGETS"), defaultNullTargets)
 
 	// LISTEN_ADDR lets us run on a non-privileged port in dev / CI / tests.
 	// Docker uses the default ":53".
@@ -59,7 +85,14 @@ func main() {
 	}
 	defer conn.Close()
 
-	log.Printf("dns: serving A %s -> %s on UDP %s", targetName, ip.String(), listenAddr)
+	log.Printf("dns: serving %d primary target(s) -> %s on UDP %s",
+		len(primaryTargets), dnsIP.String(), listenAddr)
+	for _, n := range primaryTargets {
+		log.Printf("dns:   primary: %s", n)
+	}
+	for _, n := range nullTargets {
+		log.Printf("dns:   null   : %s -> 0.0.0.0", n)
+	}
 
 	buf := make([]byte, maxUDPpacket)
 	for {
@@ -71,19 +104,13 @@ func main() {
 			log.Printf("dns: read: %v", err)
 			continue
 		}
-		reply, q, err := buildReply(buf[:n], ip)
+		reply, q, ansIP, err := buildReply(buf[:n], dnsIP, primaryTargets, nullTargets)
 		if err != nil {
 			log.Printf("dns: build reply from %s: %v", src.String(), err)
 			continue
 		}
-		// Log every query we actually answer. Format is intentionally
-		// grep-friendly: `client | qname TYPE CLASS -> result`.
-		// q.qname keeps the original casing the client sent.
-		result := "NXDOMAIN"
-		if q.answered {
-			result = "ANSWER " + ip.String()
-		}
-		log.Printf("query %s | %s %s %s -> %s", src, q.qname, qtypeName(q.qtype), qclassName(q.qclass), result)
+		log.Printf("query %s | %s %s %s -> %s", src, q.qname,
+			qtypeName(q.qtype), qclassName(q.qclass), resultLabel(q.res, ansIP))
 
 		if _, err := conn.WriteToUDP(reply, src); err != nil {
 			log.Printf("dns: write: %v", err)
@@ -91,13 +118,64 @@ func main() {
 	}
 }
 
-// query holds the parsed DNS question plus whether we authoritatively answered
-// it. Returned from buildReply so the caller can log it.
+// parseIP reads an IPv4 from an env var, returning 127.0.0.1 on empty input
+// and logging fatally on malformed input.
+func parseIP(env string) net.IP {
+	if env == "" {
+		env = "127.0.0.1"
+	}
+	ip := net.ParseIP(env).To4()
+	if ip == nil {
+		log.Fatalf("dns: DNS_IP=%q is not a valid IPv4 address", env)
+	}
+	return ip
+}
+
+// parseTargets splits a comma-separated env var into a normalised slice,
+// falling back to the supplied defaults when the env var is empty.
+func parseTargets(env string, def []string) []string {
+	if env == "" {
+		return normaliseTargets(def)
+	}
+	parts := strings.Split(env, ",")
+	return normaliseTargets(parts)
+}
+
+// normaliseTargets trims whitespace, strips a single trailing dot, drops
+// empties, and lower-cases every entry. dns names are case-insensitive so we
+// always store them in canonical form.
+func normaliseTargets(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		s = strings.TrimSuffix(s, ".")
+		out = append(out, strings.ToLower(s))
+	}
+	return out
+}
+
+// resultLabel formats a result+answer-IP pair for the log line.
+func resultLabel(r result, ansIP net.IP) string {
+	switch r {
+	case resAnswer:
+		return "ANSWER " + ansIP.String()
+	case resNull:
+		return "NULL " + ansIP.String()
+	default:
+		return "NXDOMAIN"
+	}
+}
+
+// query holds the parsed DNS question plus classification metadata. Returned
+// from buildReply so the caller can log it.
 type query struct {
-	qname    string
-	qtype    uint16
-	qclass   uint16
-	answered bool
+	qname  string
+	qtype  uint16
+	qclass uint16
+	res    result
 }
 
 // qtypeName returns a short label for common DNS query types, falling back
@@ -160,34 +238,40 @@ func uintStr(u uint16) string {
 	return string(b[i:])
 }
 
-// buildReply parses a DNS query, copies the question section verbatim, and
-// appends either an A answer (matching targetName) or sets NXDOMAIN.
-// Returns the wire-format reply and the parsed question for logging.
-func buildReply(msg []byte, ip net.IP) ([]byte, query, error) {
+// buildReply parses a DNS query and produces:
+//   - an A record pointing at dnsIP if the name is in primary,
+//   - an A record pointing at 0.0.0.0 if the name is in null of,
+//   - NXDOMAIN otherwise.
+//
+// Only A/IN queries get answered authoritatively; everything else stays on
+// NXDOMAIN so the client doesn't keep hammering us looking for glue.
+// Returns the wire-format reply, the parsed question, the IP that was put
+// in the answer section (nil if no answer), and any parse error.
+func buildReply(msg []byte, dnsIP net.IP, primary, nullof []string) ([]byte, query, net.IP, error) {
 	q := query{}
 	if len(msg) < 12 {
-		return nil, q, errors.New("query too short")
+		return nil, q, nil, errors.New("query too short")
 	}
 	id := binary.BigEndian.Uint16(msg[0:2])
 	flags := binary.BigEndian.Uint16(msg[2:4])
 	// Quick sanity: must be a standard query (QR=0), ignore everything else.
 	if flags&flagQR != 0 {
-		return nil, q, errors.New("not a query")
+		return nil, q, nil, errors.New("not a query")
 	}
 	qdCount := binary.BigEndian.Uint16(msg[4:6])
 	if qdCount == 0 || qdCount > 4 {
-		return nil, q, errors.New("no/bad question count")
+		return nil, q, nil, errors.New("no/bad question count")
 	}
 
 	// Parse the first question only. Preserve the original casing of the
-	// name for logging — we still compare case-insensitively below.
+	// name for logging — matching is done against normalised names below.
 	off := 12
 	rawName, off, err := readName(msg, off)
 	if err != nil {
-		return nil, q, err
+		return nil, q, nil, err
 	}
 	if off+4 > len(msg) {
-		return nil, q, errors.New("truncated question")
+		return nil, q, nil, errors.New("truncated question")
 	}
 	qtype := binary.BigEndian.Uint16(msg[off : off+2])
 	qclass := binary.BigEndian.Uint16(msg[off+2 : off+4])
@@ -202,11 +286,27 @@ func buildReply(msg []byte, ip net.IP) ([]byte, query, error) {
 	out = append(out, 0, 0)   // ID placeholder
 	rcode := byte(flagRcodeN) // default NXDOMAIN
 	answers := 0
-	if qtype == qtypeA && qclass == qclassIN && strings.EqualFold(rawName, targetName) {
+	answerIP := net.IP(nil)
+
+	switch {
+	case qtype == qtypeA && qclass == qclassIN && nameMatches(rawName, primary):
+		// Primary target — answer with the configured DNS_IP.
 		rcode = byte(flagRcodeO)
 		answers = 1
-		q.answered = true
+		answerIP = dnsIP
+		q.res = resAnswer
+	case qtype == qtypeA && qclass == qclassIN && nameMatches(rawName, nullof):
+		// Null target — answer with 0.0.0.0 so the client drops the
+		// connection instead of falling back to NXDOMAIN/captive logic.
+		rcode = byte(flagRcodeO)
+		answers = 1
+		answerIP = net.IPv4zero
+		q.res = resNull
+	default:
+		// Anything else, including non-A/IN queries: stay on NXDOMAIN.
+		q.res = resNXDOMAIN
 	}
+
 	respFlags := uint16(flagQR|flagAA) | uint16(rcode)
 	out = binary.BigEndian.AppendUint16(out, respFlags)
 	out = binary.BigEndian.AppendUint16(out, 1) // QDCOUNT
@@ -228,15 +328,28 @@ func buildReply(msg []byte, ip net.IP) ([]byte, query, error) {
 		out = binary.BigEndian.AppendUint16(out, qclassIN) // CLASS
 		out = binary.BigEndian.AppendUint32(out, 60)       // TTL (60s)
 		out = binary.BigEndian.AppendUint16(out, 4)        // RDLENGTH
-		out = append(out, ip...)
+		out = append(out, answerIP...)
 	}
 
-	return out, q, nil
+	return out, q, answerIP, nil
+}
+
+// nameMatches reports whether name is in set. Both are compared after
+// stripping a single trailing dot and lower-casing, matching the canonical
+// normalisation DNS resolvers apply.
+func nameMatches(name string, set []string) bool {
+	n := strings.ToLower(strings.TrimSuffix(name, "."))
+	for _, s := range set {
+		if s == n {
+			return true
+		}
+	}
+	return false
 }
 
 // readName walks a DNS name (sequence of length-prefixed labels) starting at
 // off, returning the name as a dotted string with original casing preserved
-// (callers that need case-insensitive comparison can use strings.EqualFold)
+// (callers that need case-insensitive comparison can use nameMatches above)
 // and the offset past the name's terminating zero byte. Refuses compression
 // pointers (loop-safe).
 func readName(buf []byte, off int) (string, int, error) {
@@ -263,7 +376,7 @@ func readName(buf []byte, off int) (string, int, error) {
 		return "", 0, errors.New("name too long")
 	}
 	// Preserve the original casing of each label so the operator can see
-	// exactly what the client sent. The caller (buildReply) compares against
-	// the target with strings.EqualFold, which is the DNS-spec behaviour.
+	// exactly what the client sent. Matching/normalisation happens in the
+	// caller.
 	return strings.Join(labels, "."), off, nil
 }

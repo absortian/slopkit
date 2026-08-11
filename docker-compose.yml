@@ -6,6 +6,12 @@ services:
     image: slopkit:local
     container_name: slopkit
     restart: unless-stopped
+    # Wait until the DNS is healthy before starting the web container.
+    # Otherwise the PS5 may try the captive-port check while :53 is still
+    # being bound and end up cached against the wrong (router) DNS.
+    depends_on:
+      dns:
+        condition: service_healthy
     ports:
       # HOST_PORT is the port exposed on the Docker host. We deliberately use a
       # non-standard port (8080 by default) — apply your own reverse-proxy /
@@ -27,11 +33,9 @@ services:
   # `.env.example`) so LAN clients (PS5) can hit it without colliding with
   # the OS resolver on 127.0.0.53.
   #
-  # `depends_on: [slopkit]` guarantees the DNS container is created (and
-  # usually started) before the web one. Without this the web server can be
-  # fully reachable while the DNS is still racing to bind :53 — the PS5 does
-  # its captive-port check the moment it gets an IP and won't retry for
-  # several minutes.
+  # The web container (`slopkit`, defined above) depends on this DNS with
+  # `condition: service_healthy`. That guarantees the PS5 can't reach the
+  # captive web server while :53 is still being bound.
   #
   # NOTE: port 53/udp is a privileged low port. The container must run with
   # capability NET_BIND_SERVICE (default for the official Docker Engine on
@@ -45,8 +49,9 @@ services:
     image: slopkit-dns:local
     container_name: slopkit-dns
     restart: unless-stopped
-    depends_on:
-      - slopkit
+    # No `depends_on` here: the DNS is independent of the web server and
+    # shouldn't be blocked by it. Order at startup is enforced the other way
+    # around — `slopkit` waits on `dns` being healthy below.
     # We deliberately do NOT use `network_mode: host` here. Reason: that mode
     # would bypass Docker's port mapping, which makes it impossible to bind the
     # DNS to a single host IP without also re-binding the OS resolver on
@@ -59,6 +64,10 @@ services:
     # address (e.g. `hostname -I | awk '{print $1}'`).
     environment:
       - DNS_IP=${DNS_IP:-127.0.0.1}
+      # Defaults are baked into the binary; override these only if you need
+      # a different set of captive/null targets.
+      - DNS_TARGETS=${DNS_TARGETS:-manuals.playstation.net}
+      - DNS_NULL_TARGETS=${DNS_NULL_TARGETS:-smetrics.aem.playstation.com,telemetry-console.api.playstation.com}
     ports:
       # IP:HOST:CONT format — binds ONLY on the host IP set in DNS_BIND_IP,
       # leaving 127.0.0.53 and every other interface untouched.
@@ -66,3 +75,13 @@ services:
       # all host interfaces (less safe — collides with systemd-resolved).
       - "${DNS_BIND_IP:-127.0.0.1}:53:53/udp"
       - "${DNS_BIND_IP:-127.0.0.1}:53:53/tcp"
+    # Healthcheck: the binary is `scratch`-built so we cannot run `test:`
+    # inside. Docker will mark it healthy once the container is reported as
+    # running. The Go process itself blocks in ReadFromUDP after ListenUDP,
+    # so a "running" container == a listening :53.
+    healthcheck:
+      test: ["NONE"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
