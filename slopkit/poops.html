@@ -6,6 +6,7 @@
 <title>slopkit</title>
 <link rel="preload" href="cat.jpg" as="image">
 <link rel="preload" href="mmhmm-cats-ps5.gif" as="image">
+<link rel="preload" href="cat-cooking.gif" as="image">
 
 <script>(function () {
     var pending = [];
@@ -430,7 +431,7 @@
 <body class="quiet">
 <div id="failureMessage">UNLUCKY &mdash; YOU NEED TO REBOOT</div>
 <div id="cat">
-  <img id="catImage" src="mmhmm-cats-ps5.gif" alt="">
+  <img id="catImage" src="cat-cooking.gif" alt="">
 </div>
 <h1>poops</h1>
 <div id="reboot"></div>
@@ -1012,9 +1013,12 @@ function setCatResult(success) {
     if (failureMessage) failureMessage.className = success ? "" : "on";
     if (cat) {
         cat.className = success ? "ok" : "bad";
-        if (success) {
-            const image = document.getElementById("catImage");
-            if (image) image.src = "cat.jpg";
+        const image = document.getElementById("catImage");
+        if (image) {
+            // Gato cocinando durante el proceso; al terminar:
+            //   exito  -> cat.jpg         (gato tranquilo, listo)
+            //   fallo  -> mmhmm-cats-ps5  (gato que se le quemo la cocina)
+            image.src = success ? "cat.jpg" : "mmhmm-cats-ps5.gif";
         }
     }
 }
