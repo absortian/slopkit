@@ -106,8 +106,13 @@ func main() {
 	}
 
 	dnsIP := parseIP(os.Getenv("DNS_IP"))
-	primaryTargets := parseTargets(os.Getenv("DNS_TARGETS"), defaultPrimaryTargets)
-	nullTargets := parseTargets(os.Getenv("DNS_NULL_TARGETS"), defaultNullTargets)
+	// LookupEnv (vs Getenv) so we can distinguish "unset" from "explicitly
+	// empty" — operators rely on that to disable a bucket (e.g. empty
+	// DNS_TARGETS= when manuals lives in DNS_RESOLVE_TARGETS).
+	primaryTargetsEnv, primaryTargetsSet := os.LookupEnv("DNS_TARGETS")
+	primaryTargets := parseTargets(primaryTargetsEnv, primaryTargetsSet, defaultPrimaryTargets)
+	nullTargetsEnv, nullTargetsSet := os.LookupEnv("DNS_NULL_TARGETS")
+	nullTargets := parseTargets(nullTargetsEnv, nullTargetsSet, defaultNullTargets)
 	aliases := parseAliases(os.Getenv("DNS_ALIAS_TARGETS"), primaryTargets)
 	resolveTargets := parseResolveTargets(os.Getenv("DNS_RESOLVE_TARGETS"))
 	resolver := newResolver(os.Getenv("DNS_UPSTREAM"))
@@ -293,10 +298,21 @@ func parseIP(env string) net.IP {
 }
 
 // parseTargets splits a comma-separated env var into a normalised slice,
-// falling back to the supplied defaults when the env var is empty.
-func parseTargets(env string, def []string) []string {
-	if env == "" {
+// falling back to the supplied defaults ONLY when the env var is unset.
+//
+// IMPORTANT: `env == ""` is NOT the same as `unset`. An operator who
+// explicitly sets DNS_TARGETS= (empty) in their `.env` is asking for the
+// PRIMARY bucket to be disabled — that's how they migrate manuals into
+// DNS_RESOLVE_TARGETS without the bucket default silently reactivating.
+// We use the (value, isSet) tuple from os.LookupEnv to honour that
+// distinction. Without it, the default fights the operator's intent.
+func parseTargets(env string, isSet bool, def []string) []string {
+	if !isSet {
 		return normaliseTargets(def)
+	}
+	if env == "" {
+		// Explicit empty value = operator wants the bucket disabled.
+		return nil
 	}
 	parts := strings.Split(env, ",")
 	return normaliseTargets(parts)
