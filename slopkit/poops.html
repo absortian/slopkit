@@ -165,19 +165,264 @@
   body.loader-ready { justify-content:flex-start; overflow-y:auto; padding-top:22px; }
   body.loader-ready #cat { width:112px; height:112px; margin-bottom:6px; }
   body.loader-ready #nav { display:none !important; }
-  #payloadMenu { display:none; width:330px; max-width:86vw; margin:4px auto 24px; }
+  #payloadMenu { display:none; width:360px; max-width:88vw; margin:4px auto 24px; }
   #payloadMenu.on { display:block; }
-  #payloadMenu .menuTitle { display:block; width:330px; height:56px;
-    max-width:100%; margin:0 0 10px; }
-  #payloadMenu .payloadTile {
-    box-sizing:border-box; display:block; width:330px; max-width:100%;
-    margin:0 0 10px; padding:0; border:0; border-radius:13px;
-    background:transparent; text-decoration:none !important;
+
+  /* --- Pure CSS menu title --------------------------------------------- */
+  #payloadMenu .menuTitle {
+    display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box;
+    width: 360px; max-width: 100%;
+    height: 60px;
+    margin: 0 0 14px;
+    padding: 0 18px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    color: #ecf2ff;
+    font: 700 18px/1 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    text-align: center;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 45%),
+      linear-gradient(135deg, #273850, #172235);
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.32),
+      inset 0 1px rgba(255, 255, 255, 0.14);
   }
-  #payloadMenu .payloadTile:focus { outline:3px solid #fff; outline-offset:2px; }
-  #payloadMenu .payloadTile img { display:block; width:330px; height:72px;
-    max-width:100%; margin:0 auto; }
-  #payloadMenu .payloadTile.busy { opacity:.42; }
+  #payloadMenu .menuTitle .accent {
+    display: inline-block;
+    width: 8px; height: 8px;
+    margin-right: 12px;
+    border-radius: 50%;
+    background: #5eb3ff;
+    box-shadow: 0 0 12px rgba(94, 179, 255, 0.85);
+  }
+
+  /* --- Pure CSS menu sections ------------------------------------------ */
+  #payloadMenu .menuSection {
+    width: 360px; max-width: 100%;
+    margin: 0 auto 18px;
+    box-sizing: border-box;
+  }
+  #payloadMenu .menuSection + .menuSection { margin-top: 4px; }
+  #payloadMenu .menuSection .sectionTitle {
+    display: flex; align-items: center;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0 0 11px;
+    padding: 9px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    color: #b8c2d1;
+    font: 700 11px/1 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.03);
+  }
+  #payloadMenu .menuSection .sectionTitle .pip {
+    display: inline-block;
+    width: 6px; height: 6px;
+    margin-right: 10px;
+    border-radius: 50%;
+    background: #5eb3ff;
+    box-shadow: 0 0 10px rgba(94, 179, 255, 0.7);
+  }
+  #payloadMenu .menuSection--other .sectionTitle .pip {
+    background: #6e7a8c;
+    box-shadow: none;
+  }
+
+  /* --- Pure CSS payload tiles ------------------------------------------ */
+  #payloadMenu .payloadTile {
+    position: relative;
+    box-sizing: border-box;
+    display: flex; align-items: center;
+    width: 360px; max-width: 100%;
+    min-height: 76px;
+    margin: 0 0 11px;
+    padding: 14px 18px 14px 78px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    color: #fff;
+    text-decoration: none !important;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 40%),
+      linear-gradient(135deg, #2a3a55, #1a2233);
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.32),
+      inset 0 1px rgba(255, 255, 255, 0.10),
+      inset 0 -2px rgba(0, 0, 0, 0.25);
+    transition:
+      transform .12s ease,
+      box-shadow .15s ease,
+      border-color .15s ease,
+      filter .15s ease;
+  }
+  #payloadMenu .payloadTile::before {
+    content: "";
+    position: absolute;
+    top: 0; left: -120%;
+    width: 55%; height: 100%;
+    background: linear-gradient(120deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.14) 50%,
+      rgba(255, 255, 255, 0) 100%);
+    transform: skewX(-20deg);
+    transition: left .55s ease;
+    pointer-events: none;
+  }
+  #payloadMenu .payloadTile:hover::before { left: 130%; }
+  #payloadMenu .payloadTile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+  #payloadMenu .payloadTile:focus {
+    outline: none;
+    border-color: #fff;
+    box-shadow:
+      0 0 0 4px rgba(91, 158, 255, 0.32),
+      0 16px 36px rgba(0, 0, 0, 0.4),
+      inset 0 1px rgba(255, 255, 255, 0.18);
+  }
+  #payloadMenu .payloadTile:active { transform: translateY(1px); }
+
+  #payloadMenu .payloadTile.busy { opacity: .42; pointer-events: none; }
+
+  /* Per-key accent (left bar + icon color) */
+  #payloadMenu .payloadTile .icoBox {
+    position: absolute;
+    left: 14px; top: 50%;
+    transform: translateY(-50%);
+    width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: #cfe3ff;
+  }
+  #payloadMenu .payloadTile .icoBox svg {
+    width: 26px; height: 26px; display: block;
+  }
+
+  #payloadMenu .payloadTile .tileBody {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex; flex-direction: column;
+    gap: 2px;
+  }
+  #payloadMenu .payloadTile .tileLabel {
+    font: 700 16px/1.2 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #payloadMenu .payloadTile .tileSub {
+    font: 500 12px/1.2 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .04em;
+    color: #8fa1b3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #payloadMenu .payloadTile .tileStatus {
+    margin-left: 12px;
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 26px;
+    font: 700 11px/1 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: #8fa1b3;
+  }
+  #payloadMenu .payloadTile .tileStatus .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: #5e81ac;
+    box-shadow: 0 0 0 3px rgba(94, 129, 172, 0.18);
+  }
+
+  /* Per-key palettes (drives the icon color, status, and status dot) */
+  #payloadMenu .payloadTile[data-key="ftp"]    .icoBox { color: #6ed3a3; }
+  #payloadMenu .payloadTile[data-key="gdb"]    .icoBox { color: #ebcb8b; }
+  #payloadMenu .payloadTile[data-key="klog"]   .icoBox { color: #b48cff; }
+  #payloadMenu .payloadTile[data-key="shell"]  .icoBox { color: #7fb7d4; }
+  #payloadMenu .payloadTile[data-key="web"]    .icoBox { color: #5eb3ff; }
+  #payloadMenu .payloadTile[data-key="shadow"] .icoBox { color: #ff8a3d; }
+  #payloadMenu .payloadTile[data-key="kstuff"] .icoBox { color: #ffd28a; }
+
+  #payloadMenu .payloadTile[data-key="kstuff"] {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 45%),
+      linear-gradient(135deg, #ff8a3d, #c43f7a 55%, #6a2a8a);
+    border-color: rgba(255, 210, 160, 0.35);
+    box-shadow:
+      0 12px 30px rgba(196, 63, 122, 0.38),
+      inset 0 1px rgba(255, 255, 255, 0.22),
+      inset 0 -2px rgba(0, 0, 0, 0.30);
+  }
+  #payloadMenu .payloadTile[data-key="kstuff"] .tileLabel {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.30);
+  }
+  #payloadMenu .payloadTile[data-key="kstuff"]:focus {
+    border-color: #fff;
+    box-shadow:
+      0 0 0 4px rgba(255, 138, 61, 0.35),
+      0 16px 38px rgba(196, 63, 122, 0.55),
+      inset 0 1px rgba(255, 255, 255, 0.30);
+  }
+
+  /* State-driven overrides (default / sending / sent / failed) */
+  #payloadMenu .payloadTile[data-state="sending"] {
+    border-color: rgba(235, 203, 139, 0.55);
+  }
+  #payloadMenu .payloadTile[data-state="sending"] .tileStatus {
+    color: #ebcb8b;
+  }
+  #payloadMenu .payloadTile[data-state="sending"] .tileStatus .dot {
+    background: #ebcb8b;
+    box-shadow: 0 0 0 3px rgba(235, 203, 139, 0.20);
+    animation: tilePulse 0.95s ease-in-out infinite;
+  }
+
+  #payloadMenu .payloadTile[data-state="sent"] {
+    border-color: rgba(123, 255, 162, 0.55);
+  }
+  #payloadMenu .payloadTile[data-state="sent"] {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 40%),
+      linear-gradient(135deg, #239d52, #126531);
+  }
+  #payloadMenu .payloadTile[data-state="sent"] .tileStatus {
+    color: #b8f0c6;
+  }
+  #payloadMenu .payloadTile[data-state="sent"] .tileStatus .dot {
+    background: #47c76a;
+    box-shadow: 0 0 0 3px rgba(71, 199, 106, 0.22);
+  }
+
+  #payloadMenu .payloadTile[data-state="failed"] {
+    border-color: rgba(255, 100, 115, 0.55);
+  }
+  #payloadMenu .payloadTile[data-state="failed"] {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 40%),
+      linear-gradient(135deg, #6a1a25, #3a1018);
+  }
+  #payloadMenu .payloadTile[data-state="failed"] .tileStatus {
+    color: #ff8e9a;
+  }
+  #payloadMenu .payloadTile[data-state="failed"] .tileStatus .dot {
+    background: #e74856;
+    box-shadow: 0 0 0 3px rgba(231, 72, 86, 0.22);
+  }
+
+  @keyframes tilePulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.45); opacity: 0.55; }
+  }
 
   #wrap { display:none !important; }
 </style>
@@ -197,13 +442,138 @@
 <pre id="early"></pre>
 <pre id="scr"></pre>
 <div id="payloadMenu">
-  <img class="menuTitle" data-src="../ui/payload-menu-title.png" alt="">
-  <a class="payloadTile" href="#" data-name="ftpsrv-ps5.elf" data-key="ftp"><img data-src="../ui/payload-ftp-default.png" alt=""></a>
-  <a class="payloadTile" href="#" data-name="gdbsrv-ps5.elf" data-key="gdb"><img data-src="../ui/payload-gdb-default.png" alt=""></a>
-  <a class="payloadTile" href="#" data-name="klogsrv-ps5.elf" data-key="klog"><img data-src="../ui/payload-klog-default.png" alt=""></a>
-  <a class="payloadTile" href="#" data-name="shsrv-ps5.elf" data-key="shell"><img data-src="../ui/payload-shell-default.png" alt=""></a>
-  <a class="payloadTile" href="#" data-name="websrv-ps5.elf" data-key="web"><img data-src="../ui/payload-web-default.png" alt=""></a>
-  <a class="payloadTile" href="#" data-name="shadowmountplus.elf" data-key="shadow"><img data-src="../ui/payload-shadow-default.png" alt=""></a>
+  <div class="menuTitle" role="heading" aria-level="2">
+    <span class="accent" aria-hidden="true"></span>
+    <span>Payloads</span>
+  </div>
+
+  <div class="menuSection menuSection--primary">
+    <div class="sectionTitle" role="heading" aria-level="3">
+      <span class="pip" aria-hidden="true"></span>
+      <span>Main</span>
+    </div>
+
+    <a class="payloadTile" href="#" data-name="shadowmountplus.elf" data-key="shadow" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z"></path>
+          <path d="M9 11h6"></path>
+          <path d="M12 8v6"></path>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">Shadow Mount</span>
+        <span class="tileSub">shadowmountplus.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+
+    <a class="payloadTile" href="#" data-name="kstuff.elf" data-key="kstuff" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z"></path>
+          <path d="M9 12l2 2 4-4"></path>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">KStuff</span>
+        <span class="tileSub">kstuff.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+  </div>
+
+  <div class="menuSection menuSection--other">
+    <div class="sectionTitle" role="heading" aria-level="3">
+      <span class="pip" aria-hidden="true"></span>
+      <span>Other payloads</span>
+    </div>
+
+    <a class="payloadTile" href="#" data-name="ftpsrv-ps5.elf" data-key="ftp" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+          <polyline points="7 11 12 16 17 11"></polyline>
+          <line x1="12" y1="4" x2="12" y2="16"></line>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">FTP Server</span>
+        <span class="tileSub">ftpsrv-ps5.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+
+    <a class="payloadTile" href="#" data-name="gdbsrv-ps5.elf" data-key="gdb" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 6l4 6-4 6"></path>
+          <path d="M13 6h6"></path>
+          <path d="M13 12h5"></path>
+          <path d="M13 18h6"></path>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">GDB Server</span>
+        <span class="tileSub">gdbsrv-ps5.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+
+    <a class="payloadTile" href="#" data-name="klogsrv-ps5.elf" data-key="klog" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5h16"></path>
+          <path d="M4 5v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5"></path>
+          <path d="M8 9h8"></path>
+          <path d="M8 13h8"></path>
+          <path d="M8 17h5"></path>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">Kernel Log</span>
+        <span class="tileSub">klogsrv-ps5.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+
+    <a class="payloadTile" href="#" data-name="shsrv-ps5.elf" data-key="shell" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 6 9 12 4 18"></polyline>
+          <line x1="11" y1="18" x2="20" y2="18"></line>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">Shell</span>
+        <span class="tileSub">shsrv-ps5.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+
+    <a class="payloadTile" href="#" data-name="websrv-ps5.elf" data-key="web" data-state="default">
+      <span class="icoBox" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M3 12h18"></path>
+          <path d="M12 3a13 13 0 0 1 0 18"></path>
+          <path d="M12 3a13 13 0 0 0 0 18"></path>
+        </svg>
+      </span>
+      <span class="tileBody">
+        <span class="tileLabel">Web Server</span>
+        <span class="tileSub">websrv-ps5.elf</span>
+      </span>
+      <span class="tileStatus"><span class="dot" aria-hidden="true"></span></span>
+    </a>
+  </div>
 </div>
 <div id="nav"></div>
 <div id="arm" hidden>Open this page with <b>?go=1</b> to arm it. Nothing runs
@@ -391,6 +761,17 @@ function screenMark(tag, extra) {
         setCatResult(true);
         showVerdict(false, "ELF LOADER READY");
         stage("ELF LOADER READY", "ok");
+        const auto = Q.get("autopayload");
+        if (auto && payloadIsListed(auto)) {
+            const tile = payloadMenuEl.querySelector(
+                '.payloadTile[data-name="' + auto + '"]');
+            if (tile) {
+                try { tile.focus(); } catch (e) { }
+                setTimeout(function () {
+                    try { tile.click(); } catch (e) { }
+                }, 50);
+            }
+        }
     }
     if (line.length > 110) line = line.slice(0, 107) + "...";
     screenLine(line);
@@ -481,23 +862,12 @@ function showPayloadMenu() {
     navEl.textContent = "";
     navEl.style.display = "none";
     payloadMenuEl.className = "on";
-    const title = payloadMenuEl.getElementsByClassName("menuTitle")[0];
-    if (title && !title.getAttribute("src"))
-        title.setAttribute("src", title.getAttribute("data-src"));
     const tiles = payloadMenuEl.getElementsByTagName("a");
-    for (let i = 0; i < tiles.length; ++i) {
-        const image = tiles[i].getElementsByTagName("img")[0];
-        if (image && !image.getAttribute("src"))
-            image.setAttribute("src", image.getAttribute("data-src"));
-    }
     if (tiles.length) try { tiles[0].focus(); } catch (e) { }
 }
 
 function setPayloadTileState(tile, state) {
-    const image = tile.getElementsByTagName("img")[0];
-    const key = tile.getAttribute("data-key");
-    if (image && key)
-        image.setAttribute("src", "../ui/payload-" + key + "-" + state + ".png");
+    if (tile) tile.setAttribute("data-state", state);
 }
 
 function payloadIsListed(name) {
