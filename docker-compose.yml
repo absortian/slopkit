@@ -72,6 +72,14 @@ services:
       # the same IP as the reference (which MUST already be in DNS_TARGETS).
       # Defaults to empty; populate only if your console probes extra hosts.
       - DNS_ALIAS_TARGETS=${DNS_ALIAS_TARGETS:-}
+      # DNS_RESOLVE_TARGETS — `alias=external_domain` pairs. The alias
+      # resolves to the IP that DNS_UPSTREAM returns for the external
+      # domain (cached for its TTL). Falls back to DNS_IP on upstream
+      # failure. Defaults to empty.
+      - DNS_RESOLVE_TARGETS=${DNS_RESOLVE_TARGETS:-}
+      # DNS_UPSTREAM — host:port of the recursive resolver used by
+      # DNS_RESOLVE_TARGETS. Defaults to Cloudflare (1.1.1.1:53).
+      - DNS_UPSTREAM=${DNS_UPSTREAM:-1.1.1.1:53}
     ports:
       # IP:HOST:CONT format — binds ONLY on the host IP set in DNS_BIND_IP,
       # leaving 127.0.0.53 and every other interface untouched.
