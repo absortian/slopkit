@@ -27,6 +27,12 @@ services:
   # `.env.example`) so LAN clients (PS5) can hit it without colliding with
   # the OS resolver on 127.0.0.53.
   #
+  # `depends_on: [slopkit]` guarantees the DNS container is created (and
+  # usually started) before the web one. Without this the web server can be
+  # fully reachable while the DNS is still racing to bind :53 — the PS5 does
+  # its captive-port check the moment it gets an IP and won't retry for
+  # several minutes.
+  #
   # NOTE: port 53/udp is a privileged low port. The container must run with
   # capability NET_BIND_SERVICE (default for the official Docker Engine on
   # Linux) or be invoked as root. On macOS / Windows the IP:HOST:CONT syntax
@@ -39,6 +45,8 @@ services:
     image: slopkit-dns:local
     container_name: slopkit-dns
     restart: unless-stopped
+    depends_on:
+      - slopkit
     # We deliberately do NOT use `network_mode: host` here. Reason: that mode
     # would bypass Docker's port mapping, which makes it impossible to bind the
     # DNS to a single host IP without also re-binding the OS resolver on

@@ -26,8 +26,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dns ./...
 
 FROM scratch AS dns
 COPY --from=dns-builder /out/dns /dns
-# scratch has no /etc/passwd; this is a no-op signal that the binary is what
-# we want to run. No EXPOSE here because we use network_mode: host in compose.
+# scratch has no shell. EXPOSE is documentation only — docker-compose's
+# `ports:` does the actual host-side binding.
 ENV DNS_IP=127.0.0.1
 EXPOSE 53/udp
 ENTRYPOINT ["/dns"]
