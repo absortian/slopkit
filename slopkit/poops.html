@@ -190,7 +190,9 @@
     box-shadow:
       0 12px 28px rgba(0, 0, 0, 0.32),
       inset 0 1px rgba(255, 255, 255, 0.14);
+    gap: 12px;
   }
+  #payloadMenu .menuTitle > span:not(.accent) { flex: 1 1 auto; text-align: center; }
   #payloadMenu .menuTitle .accent {
     display: inline-block;
     width: 8px; height: 8px;
@@ -198,6 +200,18 @@
     border-radius: 50%;
     background: #5eb3ff;
     box-shadow: 0 0 12px rgba(94, 179, 255, 0.85);
+  }
+
+  /* Gato cocinando: badge accesorio en la cabecera del menu de payloads */
+  #payloadMenu .menuTitle .cookBadge {
+    flex: 0 0 auto;
+    width: 42px; height: 42px;
+    margin-left: auto;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    object-fit: cover;
+    background: #131922;
   }
 
   /* --- Pure CSS menu sections ------------------------------------------ */
@@ -431,7 +445,7 @@
 <body class="quiet">
 <div id="failureMessage">UNLUCKY &mdash; YOU NEED TO REBOOT</div>
 <div id="cat">
-  <img id="catImage" src="cat-cooking.gif" alt="">
+  <img id="catImage" src="mmhmm-cats-ps5.gif" alt="">
 </div>
 <h1>poops</h1>
 <div id="reboot"></div>
@@ -446,6 +460,7 @@
   <div class="menuTitle" role="heading" aria-level="2">
     <span class="accent" aria-hidden="true"></span>
     <span>Payloads</span>
+    <img class="cookBadge" src="cat-cooking.gif" alt="" aria-hidden="true">
   </div>
 
   <div class="menuSection menuSection--primary">
@@ -1013,12 +1028,9 @@ function setCatResult(success) {
     if (failureMessage) failureMessage.className = success ? "" : "on";
     if (cat) {
         cat.className = success ? "ok" : "bad";
-        const image = document.getElementById("catImage");
-        if (image) {
-            // Gato cocinando durante el proceso; al terminar:
-            //   exito  -> cat.jpg         (gato tranquilo, listo)
-            //   fallo  -> mmhmm-cats-ps5  (gato que se le quemo la cocina)
-            image.src = success ? "cat.jpg" : "mmhmm-cats-ps5.gif";
+        if (success) {
+            const image = document.getElementById("catImage");
+            if (image) image.src = "cat.jpg";
         }
     }
 }
