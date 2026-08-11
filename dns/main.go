@@ -19,6 +19,7 @@ package main
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -64,6 +65,19 @@ const (
 )
 
 func main() {
+	// `dns healthcheck` is invoked by the Docker healthcheck on a separate
+	// invocation of this same binary — it validates that:
+	//   1. DNS_IP, if set, parses as an IPv4 address.
+	//   2. DNS_TARGETS and DNS_NULL_TARGETS, if set, parse as comma-separated
+	//      lists of names.
+	// It does NOT bind any UDP port, so it can run alongside the real DNS
+	// listener without colliding. It always exits 0 on success and 1 on
+	// failure; the message goes to stderr so `docker inspect` shows it under
+	// `State.Health.Status`.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
+
 	dnsIP := parseIP(os.Getenv("DNS_IP"))
 	primaryTargets := parseTargets(os.Getenv("DNS_TARGETS"), defaultPrimaryTargets)
 	nullTargets := parseTargets(os.Getenv("DNS_NULL_TARGETS"), defaultNullTargets)
@@ -116,6 +130,64 @@ func main() {
 			log.Printf("dns: write: %v", err)
 		}
 	}
+}
+
+// runHealthcheck validates the runtime configuration without starting the
+// server. Returns 0 on success, 1 on failure. Failure messages go to stderr so
+// they are visible in `docker inspect`.
+func runHealthcheck() int {
+	// DNS_IP — accept empty (will fall back to 127.0.0.1) but reject junk.
+	if v := os.Getenv("DNS_IP"); v != "" {
+		if net.ParseIP(v).To4() == nil {
+			fmt.Fprintln(os.Stderr, "healthcheck: DNS_IP is not a valid IPv4 address:", v)
+			return 1
+		}
+	}
+	// DNS_TARGETS / DNS_NULL_TARGETS — accept empty (use defaults) but reject
+	// malformed entries (anything with spaces embedded or invalid label chars).
+	for _, envName := range []string{"DNS_TARGETS", "DNS_NULL_TARGETS"} {
+		v := os.Getenv(envName)
+		if v == "" {
+			continue
+		}
+		for _, name := range strings.Split(v, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if !looksLikeDNSName(name) {
+				fmt.Fprintf(os.Stderr, "healthcheck: %s contains malformed entry %q\n", envName, name)
+				return 1
+			}
+		}
+	}
+	fmt.Println("healthcheck: OK")
+	return 0
+}
+
+// looksLikeDNSName returns true if name is a valid dotted DNS label sequence.
+// Permissive (no trailing dot requirement) since both forms are accepted by
+// normaliseTargets.
+func looksLikeDNSName(name string) bool {
+	if len(name) == 0 || len(name) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for _, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z':
+			case r >= 'A' && r <= 'Z':
+			case r >= '0' && r <= '9':
+			case r == '-':
+			default:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // parseIP reads an IPv4 from an env var, returning 127.0.0.1 on empty input

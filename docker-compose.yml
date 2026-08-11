@@ -75,12 +75,14 @@ services:
       # all host interfaces (less safe — collides with systemd-resolved).
       - "${DNS_BIND_IP:-127.0.0.1}:53:53/udp"
       - "${DNS_BIND_IP:-127.0.0.1}:53:53/tcp"
-    # Healthcheck: the binary is `scratch`-built so we cannot run `test:`
-    # inside. Docker will mark it healthy once the container is reported as
-    # running. The Go process itself blocks in ReadFromUDP after ListenUDP,
-    # so a "running" container == a listening :53.
+    # Healthcheck: the binary is `scratch`-built so we cannot run shell
+    # healthchecks. We invoke the same binary with a `healthcheck` subcommand
+    # that validates the env-config (DNS_IP, DNS_TARGETS, DNS_NULL_TARGETS)
+    # and exits 0. It does NOT bind :53 so it can run alongside the real DNS
+    # process in the same container. The actual DNS listener (which never
+    # exits) is the ENTRYPOINT below.
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD", "/dns", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 5
