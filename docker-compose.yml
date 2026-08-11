@@ -64,9 +64,17 @@ services:
     # address (e.g. `hostname -I | awk '{print $1}'`).
     environment:
       - DNS_IP=${DNS_IP:-127.0.0.1}
-      # Defaults are baked into the binary; override these only if you need
-      # a different set of captive/null targets.
-      - DNS_TARGETS=${DNS_TARGETS:-manuals.playstation.net}
+      # IMPORTANT: no default here. The binary itself defaults
+      # DNS_TARGETS to `manuals.playstation.net` when this env var is unset,
+      # so omitting the default from compose means an empty/blank
+      # DNS_TARGETS in your `.env` actually flows through. Otherwise an
+      # operator who moves manuals to DNS_RESOLVE_TARGETS without also
+      # adding an empty DNS_TARGETS= line gets the default applied and the
+      # upstream lookup is silently skipped (PRIMARY bucket wins).
+      - DNS_TARGETS=${DNS_TARGETS-}
+      # DNS_NULL_TARGETS still has a default for backwards compatibility
+      # with operators who haven't touched their `.env`. Override in `.env`
+      # to silence the telemetry endpoints.
       - DNS_NULL_TARGETS=${DNS_NULL_TARGETS:-smetrics.aem.playstation.com,telemetry-console.api.playstation.com}
       # DNS_ALIAS_TARGETS — `alias=reference` pairs. The alias resolves to
       # the same IP as the reference (which MUST already be in DNS_TARGETS).
