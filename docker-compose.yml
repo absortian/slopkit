@@ -23,12 +23,15 @@ services:
       - PYTHONUNBUFFERED=1
 
   # Captive-port DNS — answers ONLY manuals.playstation.net -> DNS_IP.
-  # Listens on UDP/53 directly on the host's network so LAN clients (PS5)
-  # can hit it without explicit port forwarding.
+  # Listens on UDP/53 on the host IP configured in `DNS_BIND_IP` (see
+  # `.env.example`) so LAN clients (PS5) can hit it without colliding with
+  # the OS resolver on 127.0.0.53.
   #
-  # NOTE: requires Docker on Linux (or Docker Desktop with the host-networking
-  # flag enabled on macOS / Windows). Port 53/udp is a privileged low port;
-  # running this in `network_mode: host` bypasses the docker-proxy bridge.
+  # NOTE: port 53/udp is a privileged low port. The container must run with
+  # capability NET_BIND_SERVICE (default for the official Docker Engine on
+  # Linux) or be invoked as root. On macOS / Windows the IP:HOST:CONT syntax
+  # requires Docker Desktop's "Allow privileged ports" or a TCP/UDP proxy
+  # mapping a high port.
   dns:
     build:
       context: .
@@ -36,10 +39,22 @@ services:
     image: slopkit-dns:local
     container_name: slopkit-dns
     restart: unless-stopped
-    network_mode: host
+    # We deliberately do NOT use `network_mode: host` here. Reason: that mode
+    # would bypass Docker's port mapping, which makes it impossible to bind the
+    # DNS to a single host IP without also re-binding the OS resolver on
+    # 127.0.0.53. By staying on the default bridge network we can keep the
+    # system resolver untouched and only expose UDP/53 on the chosen IP.
+    #
+    # `DNS_BIND_IP` is the host IP that will answer port 53/udp. Set it in
+    # `.env` (see `.env.example`). Defaults to 127.0.0.1 which is only useful
+    # for in-host tests; for LAN use, set it to the host's primary IPv4
+    # address (e.g. `hostname -I | awk '{print $1}'`).
     environment:
       - DNS_IP=${DNS_IP:-127.0.0.1}
-    # Bind UDP/53 on the host directly so PS5 LAN queries reach this container.
-    # If you want to run the DNS in bridge mode instead, swap network_mode for:
-    #   ports: ["53:53/udp"]
-    # and update your router / firewall accordingly.
+    ports:
+      # IP:HOST:CONT format — binds ONLY on the host IP set in DNS_BIND_IP,
+      # leaving 127.0.0.53 and every other interface untouched.
+      # Remove the leading `${DNS_BIND_IP:-127.0.0.1}:` if you want to bind on
+      # all host interfaces (less safe — collides with systemd-resolved).
+      - "${DNS_BIND_IP:-127.0.0.1}:53:53/udp"
+      - "${DNS_BIND_IP:-127.0.0.1}:53:53/tcp"
