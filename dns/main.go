@@ -484,6 +484,65 @@ func clampTTL(ttl time.Duration, min, max time.Duration) time.Duration {
 	return ttl
 }
 
+// readNamePtr walks a DNS name starting at off, returning the name as a
+// dotted string and the offset past the name's terminating byte (NOT
+// following the pointer — caller keeps walking from next). Unlike
+// readName this variant FOLLOWS compression pointers, since upstream
+// responses always use them to reference the question's labels.
+//
+// We bound the total walk length to 255 bytes and refuse any pointer that
+// would loop, so a malicious / malformed upstream can't lock us up.
+func readNamePtr(buf []byte, off int) (string, int, error) {
+	var labels []string
+	jumped := false
+	end := off
+	hops := 0
+	for off < len(buf) {
+		l := int(buf[off])
+		if l == 0 {
+			off++
+			if !jumped {
+				end = off
+			}
+			break
+		}
+		if l&0xC0 == 0xC0 {
+			// Pointer: top 2 bits set. Lower 14 bits are the offset
+			// into buf of the target label sequence.
+			if off+1 >= len(buf) {
+				return "", 0, errors.New("truncated pointer")
+			}
+			target := int(l&0x3F)<<8 | int(buf[off+1])
+			if target >= len(buf) {
+				return "", 0, errors.New("pointer out of bounds")
+			}
+			if !jumped {
+				end = off + 2
+				jumped = true
+			}
+			off = target
+			hops++
+			if hops > 64 {
+				return "", 0, errors.New("pointer loop")
+			}
+			continue
+		}
+		if l&0xC0 != 0 {
+			return "", 0, errors.New("reserved label type")
+		}
+		off++
+		if off+l > len(buf) {
+			return "", 0, errors.New("label overflow")
+		}
+		labels = append(labels, string(buf[off:off+l]))
+		off += l
+	}
+	if off > end+255 || len(labels) > 127 {
+		return "", 0, errors.New("name too long")
+	}
+	return strings.Join(labels, "."), end, nil
+}
+
 // queryUpstream sends a single A query to the configured upstream and
 // returns the first A record (plus its TTL) from the answer section. We
 // hand-build a minimal DNS query and parse only the fields we need; full
@@ -570,9 +629,11 @@ func parseUpstreamResponse(resp []byte, expectID uint16) (net.IP, time.Duration,
 
 	off := 12
 	// Skip the question section verbatim. We don't validate it matches
-	// our query — ID check above is enough.
+	// our query — ID check above is enough. Use readNamePtr because the
+	// upstream may use compression pointers even in its own question
+	// echo (rare, but legal).
 	for i := 0; i < int(qdCount); i++ {
-		_, next, err := readName(resp, off)
+		_, next, err := readNamePtr(resp, off)
 		if err != nil {
 			return nil, 0, fmt.Errorf("upstream question name: %w", err)
 		}
@@ -584,7 +645,7 @@ func parseUpstreamResponse(resp []byte, expectID uint16) (net.IP, time.Duration,
 	}
 	// Walk the answer section, returning the first A record.
 	for i := 0; i < int(anCount); i++ {
-		_, next, err := readName(resp, off)
+		_, next, err := readNamePtr(resp, off)
 		if err != nil {
 			return nil, 0, fmt.Errorf("upstream answer name: %w", err)
 		}
