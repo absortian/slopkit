@@ -1,4 +1,4 @@
-// dns/main.go — minimal authoritative DNS server with three buckets:
+// dns/main.go — minimal authoritative DNS server with four buckets:
 //
 //  1. PRIMARY targets (DNS_TARGETS, default: manuals.playstation.net)
 //     Answer A queries with the IPv4 address supplied via DNS_IP.
@@ -11,7 +11,15 @@
 //     NXDOMAIN here because some clients fall back to a captive portal on
 //     NXDOMAIN, which would re-trigger the very loop we are trying to break.
 //
-//  3. Anything else — answer NXDOMAIN. No recursion, no caching, no upstream.
+//  3. ALIAS targets  (DNS_ALIAS_TARGETS, default: empty)
+//     Each entry is `alias=referencia` where `referencia` is the name of a
+//     PRIMARY target. The alias resolves to the SAME IP as its reference,
+//     so an operator can spoof additional captive-port probes (e.g. some
+//     consoles also hit `www.playstation.com` or `example.com`) without
+//     duplicating the IP. The reference must exist in DNS_TARGETS — we do
+//     not perform recursive resolution.
+//
+//  4. Anything else — answer NXDOMAIN. No recursion, no caching, no upstream.
 //
 // Sized to be embedded on scratch in a multi-stage Docker build. ~2 MB binary.
 package main
@@ -81,6 +89,7 @@ func main() {
 	dnsIP := parseIP(os.Getenv("DNS_IP"))
 	primaryTargets := parseTargets(os.Getenv("DNS_TARGETS"), defaultPrimaryTargets)
 	nullTargets := parseTargets(os.Getenv("DNS_NULL_TARGETS"), defaultNullTargets)
+	aliases := parseAliases(os.Getenv("DNS_ALIAS_TARGETS"), primaryTargets)
 
 	// LISTEN_ADDR lets us run on a non-privileged port in dev / CI / tests.
 	// Docker uses the default ":53".
@@ -107,6 +116,9 @@ func main() {
 	for _, n := range nullTargets {
 		log.Printf("dns:   null   : %s -> 0.0.0.0", n)
 	}
+	for _, a := range aliases {
+		log.Printf("dns:   alias  : %s -> %s -> %s", a.alias, a.reference, dnsIP.String())
+	}
 
 	buf := make([]byte, maxUDPpacket)
 	for {
@@ -118,7 +130,7 @@ func main() {
 			log.Printf("dns: read: %v", err)
 			continue
 		}
-		reply, q, ansIP, err := buildReply(buf[:n], dnsIP, primaryTargets, nullTargets)
+		reply, q, ansIP, err := buildReply(buf[:n], dnsIP, primaryTargets, nullTargets, aliases)
 		if err != nil {
 			log.Printf("dns: build reply from %s: %v", src.String(), err)
 			continue
@@ -157,6 +169,28 @@ func runHealthcheck() int {
 			}
 			if !looksLikeDNSName(name) {
 				fmt.Fprintf(os.Stderr, "healthcheck: %s contains malformed entry %q\n", envName, name)
+				return 1
+			}
+		}
+	}
+	// DNS_ALIAS_TARGETS — accept empty but reject malformed entries. Each
+	// entry must be of the form `alias=reference`, both halves must look
+	// like DNS names. We do NOT verify that the reference exists in
+	// DNS_TARGETS here — that's done in parseAliases at startup so the
+	// failure mode is a fatal log line rather than silent misconfiguration.
+	if v := os.Getenv("DNS_ALIAS_TARGETS"); v != "" {
+		for _, entry := range strings.Split(v, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			parts := strings.SplitN(entry, "=", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				fmt.Fprintf(os.Stderr, "healthcheck: DNS_ALIAS_TARGETS contains malformed entry %q (want alias=reference)\n", entry)
+				return 1
+			}
+			if !looksLikeDNSName(strings.TrimSpace(parts[0])) || !looksLikeDNSName(strings.TrimSpace(parts[1])) {
+				fmt.Fprintf(os.Stderr, "healthcheck: DNS_ALIAS_TARGETS contains malformed entry %q\n", entry)
 				return 1
 			}
 		}
@@ -225,6 +259,50 @@ func normaliseTargets(in []string) []string {
 		}
 		s = strings.TrimSuffix(s, ".")
 		out = append(out, strings.ToLower(s))
+	}
+	return out
+}
+
+// aliasEntry pairs an alias name with the primary target it should mirror.
+// Both fields are pre-normalised (lower-cased, trailing dot stripped).
+type aliasEntry struct {
+	alias     string
+	reference string
+}
+
+// parseAliases reads DNS_ALIAS_TARGETS (a comma-separated list of
+// `alias=reference` pairs) and returns a normalised slice. Each entry's
+// `reference` must exist in `primary` — we never do recursive DNS lookups,
+// so an alias that points at a name we don't already answer for would just
+// silently fall through to NXDOMAIN, which defeats the point. Failing fast
+// at startup is safer.
+func parseAliases(env string, primary []string) []aliasEntry {
+	if env == "" {
+		return nil
+	}
+	primarySet := make(map[string]struct{}, len(primary))
+	for _, p := range primary {
+		primarySet[p] = struct{}{}
+	}
+	var out []aliasEntry
+	for _, raw := range strings.Split(env, ",") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		parts := strings.SplitN(raw, "=", 2)
+		if len(parts) != 2 {
+			log.Fatalf("dns: DNS_ALIAS_TARGETS contains malformed entry %q (want alias=reference)", raw)
+		}
+		alias := normaliseTargets([]string{parts[0]})
+		reference := normaliseTargets([]string{parts[1]})
+		if len(alias) == 0 || len(reference) == 0 {
+			log.Fatalf("dns: DNS_ALIAS_TARGETS contains malformed entry %q (want alias=reference)", raw)
+		}
+		if _, ok := primarySet[reference[0]]; !ok {
+			log.Fatalf("dns: DNS_ALIAS_TARGETS entry %q references %q which is NOT in DNS_TARGETS — add it first", raw, reference[0])
+		}
+		out = append(out, aliasEntry{alias: alias[0], reference: reference[0]})
 	}
 	return out
 }
@@ -312,6 +390,7 @@ func uintStr(u uint16) string {
 
 // buildReply parses a DNS query and produces:
 //   - an A record pointing at dnsIP if the name is in primary,
+//   - an A record pointing at dnsIP if the name matches an alias of a primary,
 //   - an A record pointing at 0.0.0.0 if the name is in null of,
 //   - NXDOMAIN otherwise.
 //
@@ -319,7 +398,7 @@ func uintStr(u uint16) string {
 // NXDOMAIN so the client doesn't keep hammering us looking for glue.
 // Returns the wire-format reply, the parsed question, the IP that was put
 // in the answer section (nil if no answer), and any parse error.
-func buildReply(msg []byte, dnsIP net.IP, primary, nullof []string) ([]byte, query, net.IP, error) {
+func buildReply(msg []byte, dnsIP net.IP, primary, nullof []string, aliases []aliasEntry) ([]byte, query, net.IP, error) {
 	q := query{}
 	if len(msg) < 12 {
 		return nil, q, nil, errors.New("query too short")
@@ -363,6 +442,15 @@ func buildReply(msg []byte, dnsIP net.IP, primary, nullof []string) ([]byte, que
 	switch {
 	case qtype == qtypeA && qclass == qclassIN && nameMatches(rawName, primary):
 		// Primary target — answer with the configured DNS_IP.
+		rcode = byte(flagRcodeO)
+		answers = 1
+		answerIP = dnsIP
+		q.res = resAnswer
+	case qtype == qtypeA && qclass == qclassIN && aliasMatches(rawName, aliases):
+		// Alias of a primary target — mirror the primary's IP so additional
+		// captive-port probes (e.g. some consoles also hit
+		// www.playstation.com or example.com) reach the local web server
+		// without duplicating DNS_IP.
 		rcode = byte(flagRcodeO)
 		answers = 1
 		answerIP = dnsIP
@@ -413,6 +501,19 @@ func nameMatches(name string, set []string) bool {
 	n := strings.ToLower(strings.TrimSuffix(name, "."))
 	for _, s := range set {
 		if s == n {
+			return true
+		}
+	}
+	return false
+}
+
+// aliasMatches reports whether name matches the `alias` field of any entry
+// in the slice, using the same case-insensitive / trailing-dot-tolerant
+// comparison as nameMatches.
+func aliasMatches(name string, set []aliasEntry) bool {
+	n := strings.ToLower(strings.TrimSuffix(name, "."))
+	for _, e := range set {
+		if e.alias == n {
 			return true
 		}
 	}
