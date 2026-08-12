@@ -305,6 +305,65 @@
   #payloadMenu .payloadTile:hover img { transform: scale(1.015); }
   #payloadMenu .payloadTile:active img { transform: scale(0.99); }
 
+  /* Footer with a "bookmark this as payloads-only" link, only shown
+     after the in-page menu has revealed itself. */
+  #payloadMenu .menuFooter {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(143, 161, 179, 0.18);
+    text-align: center;
+    font-size: 13px;
+    color: #8fa1b3;
+  }
+  #payloadMenu .menuFooter a {
+    color: #cfe3ff;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  #payloadMenu .menuFooter a:hover { color: #fff; }
+
+  /* Skip-exploit menu: same tile look, but in its own container so
+     we can also show an inline "press RUN first" error/help block. */
+  #skipMenu { display:none; width:440px; max-width:92vw; margin:4px auto 24px; }
+  #skipMenu.on { display:block; }
+  #skipMenu .menuTitle {
+    font: 700 18px/1 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .10em; text-transform: uppercase;
+    color: #d8dee9; margin: 0 0 10px; text-align: center;
+  }
+  #skipMenu .menuTitle .accent {
+    display: inline-block; width: 10px; height: 10px; margin-right: 10px;
+    border-radius: 50%; vertical-align: middle;
+    background: #ebcb8b;
+    box-shadow: 0 0 14px rgba(235, 203, 139, 0.6);
+  }
+  #skipMenu .menuNote {
+    margin: 0 0 14px; padding: 10px 12px;
+    background: rgba(91, 158, 255, 0.08);
+    border: 1px solid rgba(91, 158, 255, 0.22);
+    border-radius: 8px;
+    font-size: 13px; color: #cfe3ff;
+    white-space: pre-wrap;
+  }
+  #skipMenu .menuNote.bad {
+    background: rgba(255, 93, 108, 0.10);
+    border-color: rgba(255, 93, 108, 0.35);
+    color: #ffc8cf;
+  }
+  #skipMenu .menuRunLink {
+    display: block; margin: 0 auto 6px;
+    box-sizing: border-box; padding: 12px 18px;
+    border: 2px solid #5e81ac; background: #223146;
+    color: #cfe3ff; text-decoration: none;
+    border-radius: 8px; font: 700 16px/1 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .10em; text-transform: uppercase;
+    text-align: center;
+  }
+  #skipMenu .menuRunLink:hover { background: #2c3e5e; }
+  #skipMenu .menuSection { margin: 0 0 10px; }
+  #skipMenu .sectionTitle { display:none; }
+  #skipMenu .payloadTile { margin: 0 0 10px; }
+
   #wrap { display:none !important; }
 </style>
 </head>
@@ -370,6 +429,17 @@
       <img src="buttons/button-web.png" width="560" height="112" border="0" alt="Load Web Server">
     </a>
   </div>
+</div>
+<div id="skipMenu">
+  <div class="menuTitle" role="heading" aria-level="2">
+    <span class="accent" aria-hidden="true"></span>
+    <span id="skipMenuTitle">Payloads</span>
+  </div>
+  <div id="skipMenuNote" class="menuNote" hidden></div>
+  <div id="skipMenuRunWrap" hidden>
+    <a id="skipMenuRunLink" class="menuRunLink" href="#">RUN exploit first</a>
+  </div>
+  <div id="skipMenuTiles" class="menuSection"></div>
 </div>
 <div id="nav"></div>
 <div id="arm" hidden>Open this page with <b>?go=1</b> to arm it. Nothing runs
@@ -459,6 +529,7 @@ const DEFAULT_ATTEMPTS = TRIGGER === "overflow" ? 96
 
 const cfg = {
 
+    skip_exploit: Q.get("skip_exploit") === "1",
     payload: Q.get("payload") || "",
     trigger: TRIGGER,
     burn: BURN,
@@ -660,6 +731,140 @@ function showPayloadMenu() {
     payloadMenuEl.className = "on";
     const tiles = payloadMenuEl.getElementsByTagName("a");
     if (tiles.length) try { tiles[0].focus(); } catch (e) { }
+
+    // Add a footer link so the user can bookmark a "payloads-only" URL
+    // that re-enters this page with skip_exploit=1 on subsequent loads.
+    if (!payloadMenuEl.querySelector(".menuFooter")) {
+        const footer = document.createElement("div");
+        footer.className = "menuFooter";
+        const a = document.createElement("a");
+        a.href = "?go=1&auto=1&trigger=netcontrol&payload=1"
+            + "&skip_exploit=1&v=" + encodeURIComponent(String(REV));
+        a.textContent = "↻ bookmark this as payloads-only";
+        a.setAttribute("data-key", "skip-bookmark");
+        footer.appendChild(a);
+        payloadMenuEl.appendChild(footer);
+    }
+
+    // Remember, in this tab, that the user reached the payload menu at
+    // least once. The home page (index.html) reads this so its PAYLOADS
+    // button can take focus on the next visit instead of the RUN button.
+    try { sessionStorage.setItem("slopkit:reached-payloads", "1"); } catch { }
+}
+
+/* --------------------------------------------------------------------- *
+ *  "skip_exploit" path                                                   *
+ *                                                                       *
+ *  When the user lands on poops.html with ?skip_exploit=1, we do NOT     *
+ *  re-run the exploit ladder. We rely on the elfldr that the previous   *
+ *  RUN already spawned on the PS5 (kernel-side, port 9021) being still   *
+ *  alive. We BLOCK if the last run recorded in sessionStorage was not   *
+ *  clean (fail > 0, reboot required, or stalled), so we never send an   *
+ *  ELF to a console whose state we can't trust.                          *
+ *  -------------------------------------------------------------------- */
+const skipMenuEl = document.getElementById("skipMenu");
+const skipMenuTitleEl = document.getElementById("skipMenuTitle");
+const skipMenuNoteEl = document.getElementById("skipMenuNote");
+const skipMenuRunWrapEl = document.getElementById("skipMenuRunWrap");
+const skipMenuRunLinkEl = document.getElementById("skipMenuRunLink");
+const skipMenuTilesEl = document.getElementById("skipMenuTiles");
+
+function buildSkipMenuTiles() {
+    // Clone the real tile <a> elements from the (hidden) #payloadMenu so
+    // we don't have to maintain a second list. The onclick calls the same
+    // sendPayloadInPlace() the ladder uses, so existing [data-state] CSS
+    // and tileBusy logic apply unchanged.
+    skipMenuTilesEl.textContent = "";
+    const sourceTiles = payloadMenuEl.getElementsByTagName("a");
+    for (let i = 0; i < sourceTiles.length; ++i) {
+        const src = sourceTiles[i];
+        const name = src.getAttribute("data-name");
+        if (!name) continue;
+        const clone = src.cloneNode(true);
+        clone.setAttribute("data-state", "default");
+        clone.setAttribute("href", "#");
+        clone.onclick = function (e) {
+            e.preventDefault();
+            setPayloadTileState(clone, "sending");
+            sendPayloadInPlace(name, clone).then(function () {
+                setPayloadTileState(clone, "sent");
+            }).catch(function (err) {
+                setPayloadTileState(clone, "failed");
+                const msg = (err && err.message) || String(err);
+                stage("payload '" + name + "' failed: " + msg, "bad");
+            });
+            return false;
+        };
+        skipMenuTilesEl.appendChild(clone);
+    }
+}
+
+function renderSkipExploitPath() {
+    // Refuse to skip if the latch is held. The latch is one-shot and tracks
+    // an aborted/failed run; sending ELFs now is unsafe.
+    const l = storeGet(LATCH_KEY);
+    const latched = !!l;
+
+    const last = LAST_RUN;
+    const dirty = !last
+        || (typeof last.fail === "number" && last.fail > 0)
+        || last.reboot
+        || (last.stoppedAt && last.stoppedAt.length);
+
+    // Always turn the chef UI into a clean "ready" state.
+    navEl.textContent = "";
+    navEl.style.display = "none";
+    try { document.getElementById("failureMessage").className = ""; } catch { }
+    document.body.classList.add("loader-ready");
+    skipMenuEl.className = "on";
+
+    // URL the user should follow to re-run the exploit normally.
+    const runHref = "slopkit/poops.html?go=1&auto=1"
+        + "&trigger=netcontrol&payload=1&v="
+        + encodeURIComponent(String(REV));
+
+    if (latched || dirty) {
+        const why = latched
+            ? "the one-shot safety latch is still held"
+            : !last ? "there is no recorded successful RUN yet"
+            : "the last recorded RUN was not clean"
+              + (last.fail ? " (fail=" + last.fail + ")" : "")
+              + (last.reboot ? " (reboot required)" : "")
+              + (last.stoppedAt ? " (stopped at '" + last.stoppedAt + "')" : "");
+        skipMenuTitleEl.textContent = "Cannot skip exploit";
+        skipMenuNoteEl.hidden = false;
+        skipMenuNoteEl.className = "menuNote bad";
+        skipMenuNoteEl.textContent = "Reason: " + why + ".\n\n"
+            + "A running RUN is the only proof that the PS5 has elfldr "
+            + "listening on port 9021, and an unsafe/mid-flight boot is "
+            + "the only thing that would invalidate it. Press RUN below and "
+            + "wait for the menu to appear, then you can use PAYLOADS-only "
+            + "next time.";
+        skipMenuRunLinkEl.href = runHref;
+        skipMenuRunWrapEl.hidden = false;
+        skipMenuTilesEl.textContent = "";
+        stage("cannot skip exploit — " + why, "bad");
+        flushMark("SKIP-BLOCKED", why.replace(/\s+/g, "_"));
+        return;
+    }
+
+    // Clean path: build the cloned tiles, render the menu, leave a note.
+    skipMenuTitleEl.textContent =
+        "Payloads (skipping exploit — uses last RUN's elfldr)";
+    skipMenuNoteEl.hidden = false;
+    skipMenuNoteEl.className = "menuNote";
+    skipMenuNoteEl.textContent =
+        "Skipping the exploit ladder. This assumes the elfldr the previous "
+        + "RUN spawned on the PS5 is still listening on port 9021. If a "
+        + "payload tile shows the red 'failed' state, the elfldr is gone "
+        + "(reboot, app close, anything that reset the console) — go back "
+        + "and RUN the exploit normally.";
+    skipMenuRunWrapEl.hidden = true;
+    buildSkipMenuTiles();
+    const first = skipMenuTilesEl.getElementsByTagName("a")[0];
+    if (first) try { first.focus(); } catch (e) { }
+    stage("payload menu opened (skip_exploit)", "ok");
+    flushMark("SKIP-OK", "");
 }
 
 function setPayloadTileState(tile, state) {
@@ -1885,6 +2090,15 @@ function lastRunText() {
 (async function entry() {
 
     screenLine("slopkit -- reading the one-shot safety latch");
+
+    // ?skip_exploit=1 — go straight to payload send without re-running the
+    // exploit ladder. We do this BEFORE the latch check because the latch
+    // is about ROP-chain safety, which is not relevant if we never invoke
+    // the chain. We do still gate on LAST_RUN quality (see renderSkipExploitPath).
+    if (cfg.skip_exploit) {
+        renderSkipExploitPath();
+        return;
+    }
 
     if (CLEARLATCH) {
         renderNav("", false);

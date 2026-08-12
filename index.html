@@ -78,6 +78,8 @@
     width: 320px; max-width: 64vw; height: auto;
     border: 0;
   }
+  .btn.payloads { opacity: .82; }
+  .btn.payloads img { width: 240px; max-width: 50vw; }
   .btn:hover { transform: translateY(-2px); }
   .btn:focus {
     outline: none;
@@ -108,6 +110,11 @@
        tabindex="0">
       <img src="slopkit/buttons/button-run.png" width="320" height="86" border="0" alt="Run">
     </a>
+    <a id="payloads" class="btn payloads"
+       href="slopkit/poops.html?go=1&amp;auto=1&amp;trigger=netcontrol&amp;payload=1&amp;skip_exploit=1&amp;v=17"
+       tabindex="0">
+      <img src="slopkit/buttons/button-payloads.png" width="480" height="128" border="0" alt="Payloads only">
+    </a>
   </div>
   <div id="status">no refunds if the kitchen catches fire</div>
 </div>
@@ -116,6 +123,16 @@
     var q = new URLSearchParams(location.search);
     var start = document.getElementById("start");
     start.focus();
+} catch (e) {}
+
+try {
+    // On subsequent visits, surface the PAYLOADS button by reflecting
+    // a sessionStorage hint from the last exploit run: if the user
+    // already reached the payload menu, PAYLOADS gets the focus ring.
+    if (sessionStorage.getItem("slopkit:reached-payloads") === "1") {
+        var p = document.getElementById("payloads");
+        if (p) p.focus();
+    }
 } catch (e) {}
 
 try {
